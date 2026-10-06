@@ -60,6 +60,41 @@ whether `bundle exec rails server` (the README path) is affected. Rails normally
 
 **Why it matters beyond itself:** no automated job boots the API from a clean checkout, so setup regressions like this go unnoticed. See the related leads below.
 
+---
+
+- ID : F-02
+- Sev : P0
+- Finding : Any admin user can obtain a valid token for any organization by choosing it in a request header at login
+- Type : Missing spec (multi-tenancy and login are undefined) + Built wrong (authorization trusts client input)
+- Impact : Any admin of one client can enter any other client's organization and read or change its vacancies, assessments, interview sessions, and candidate data
+- Status : Open
+
+### F-02: Login lets the client choose its own organization (cross-tenant access)
+
+**Severity:** 
+P0. Each client's core expectation is that its candidates' data is private to it. That guarantee does not hold, and there is no workaround: tenant filtering on every query is only as trustworthy as the token, and the token's organization is chosen by the caller. Even read as a data-integrity issue it is at least P1.
+
+**Type:** 
+Missing spec: neither PRD defines multi-tenancy, user-to-organization membership, or how login decides the organization. Built wrong: the endpoint signs a client-supplied header into the token and treats it as authorization.
+
+**Impact:** 
+Any user with an admin login can mint a token for any organization and then use every assessor endpoint inside it: list and edit vacancies, list assessments and sessions, read transcripts and portfolios. In a multi-client deployment, one client's admin can read every other client's candidates.
+
+**Evidence / repro:** 
+Setup: two organizations (`test-corp`, `other-corp`), one admin user (`admin@example.com`), one vacancy owned by `test-corp`.
+1. `POST /api/v1/auth/login` with header `X-Tenant-Scheme: test-corp` and the admin credentials → `200`, token whose `scheme` claim is `test-corp`.
+2. Same request, same user, with `X-Tenant-Scheme: other-corp` → `200`, token whose `scheme` claim is `other-corp`.
+3. `GET /api/v1/vacancies` with the `test-corp` token → returns the `test-corp` vacancy.
+4. `GET /api/v1/vacancies` with the `other-corp` token → `{"vacancies": [], ...}`.
+
+Steps 3 and 4 show that vacancy filtering by organization works. The hole is step 2: the same user gets into either organization just by changing one header.
+
+**Root cause:** 
+The `users` table has no link to an organization, so the API cannot know which organization a user belongs to. `AuthenticationController#resolve_scheme` takes the organization from the `X-Tenant-Scheme` request header and signs it into the token. Without the header, it falls back to `SELECT scheme FROM organizations LIMIT 1`, an arbitrary organization.
+
+**Not verified:** 
+Comments in the code say tokens and organizations normally come from an external system that is not in this repo. This audit can only judge this repo, where the login endpoint is exposed and working as described.
+
 ## Leads to verify
 
 Observed while reading config. These are not confirmed findings yet.
