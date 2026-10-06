@@ -32,7 +32,7 @@ _To be written at the end of the audit._
 - Finding : API process crashes on boot from a fresh checkout when started with Puma directly
 - Type : Built wrong (setup)
 - Impact : Engineers and CI starting the API from a clean checkout get a crash; production image is unaffected
-- Status : Open
+- Status : Fixed (e33f81d)
 
 ### F-01: API crashes on boot from a fresh checkout (Puma pidfile directory missing)
 
@@ -71,6 +71,13 @@ Observed while reading config. These are not confirmed findings yet.
 - The README's frontend step points to `../ai-interview-web`; the folder is `web/`.
 
 - JWT signing depends on `SECRET_KEY_BASE` matching an external service, and organizations are expected to come from an external shared database. The platform's auth and tenancy depend on a system that is not in this repo.
+
+**Fix:** 
+`config/puma.rb` now creates the pidfile directory before Puma writes to it (`FileUtils.mkdir_p`). This works for every start path (Procfile, Docker, CI) and for a custom `PIDFILE`. The `.gitignore` conflict is left as is; startup no longer depends on it.
+
+**Red → green:** 
+- Red: `3e6454a` added the API boot check; it failed on the pidfile crash. <link to failed run>
+- Green: `e33f81d` fixed `puma.rb`; the same unchanged check passed. <link to passing run>
 
 ## Systemic pattern
 
