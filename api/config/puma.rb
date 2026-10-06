@@ -20,7 +20,12 @@ port ENV.fetch('PORT', 3001)
 
 environment ENV.fetch('RAILS_ENV', 'development')
 
-pidfile ENV.fetch('PIDFILE', 'tmp/pids/server.pid')
+require 'fileutils'
+
+pidfile_path = ENV.fetch('PIDFILE', 'tmp/pids/server.pid')
+FileUtils.mkdir_p(File.dirname(pidfile_path))
+pidfile pidfile_path
+
 
 preload_app!
 
