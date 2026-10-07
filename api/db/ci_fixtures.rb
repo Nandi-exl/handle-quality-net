@@ -18,5 +18,8 @@ admin = User.find_or_create_by!(email: 'admin@example.com') do |user|
   user.role     = 'admin'
 end
 
+# Users belong to exactly one organization; the test admin belongs to test-corp.
+admin.update!(organization: Organization.find_by!(scheme: 'test-corp'))
+
 puts "CI fixtures ready: organizations=#{Organization.pluck(:scheme).join(', ')} " \
      "(added #{other.scheme}), admin=#{admin.email}"
