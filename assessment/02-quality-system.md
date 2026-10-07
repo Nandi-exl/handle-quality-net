@@ -103,6 +103,7 @@ G2 demo PRs stay open: one blocked, one passing. They are not part of the tag ga
 
 ## Not built yet
 
-- Paste the `v1.0.0` Release run URL into `03-release-decision.md` after the tag job finishes.
+- Close the audit: ranking, systemic pattern, ship / do-not-ship, and coverage in `01-audit.md`.
+
 
 

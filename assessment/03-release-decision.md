@@ -1,6 +1,6 @@
 # 03 — Release decision (v1.0.0)
 
-> Fill the run URL after the **Release** workflow on tag `v1.0.0` finishes.
+> Tag `v1.0.0` on `c439ef6`. Gate run finished green.
 
 ## Recommendation
 
@@ -16,11 +16,11 @@ On tag `v1.0.0`, workflow **Release**:
 - API tests — F-02 login tenancy, F-03 portfolio tenancy, F-04 skill levels (RSpec + black-box)
 - Release status — prints **releasable** or **blocked** and fails the job if either check failed
 
-Gate run: <link to the Release workflow run on v1.0.0>
+Gate run: https://github.com/Nandi-exl/handle-quality-net/actions/runs/37594382378
 
 ## What the gate found
 
-_To be copied from that run: releasable or blocked, and which job if blocked._
+**Releasable.** API boot passed, API tests passed, Release status printed releasable. No job failed.
 
 ## Remaining risk (not P0/P1 in this audit)
 
