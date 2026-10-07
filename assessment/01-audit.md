@@ -60,6 +60,13 @@ whether `bundle exec rails server` (the README path) is affected. Rails normally
 
 **Why it matters beyond itself:** no automated job boots the API from a clean checkout, so setup regressions like this go unnoticed. See the related leads below.
 
+**Fix:** 
+`config/puma.rb` now creates the pidfile directory before Puma writes to it (`FileUtils.mkdir_p`). This works for every start path (Procfile, Docker, CI) and for a custom `PIDFILE`. The `.gitignore` conflict is left as is; startup no longer depends on it.
+
+**Red → green:** 
+- Red: `3e6454a` added the API boot check; it failed on the pidfile crash. <link to failed run>
+- Green: `e33f81d` fixed `puma.rb`; the same unchanged check passed. <link to passing run>
+
 ---
 
 - ID : F-02
@@ -67,7 +74,7 @@ whether `bundle exec rails server` (the README path) is affected. Rails normally
 - Finding : Any admin user can obtain a valid token for any organization by choosing it in a request header at login
 - Type : Missing spec (multi-tenancy and login are undefined) + Built wrong (authorization trusts client input)
 - Impact : Any admin of one client can enter any other client's organization and read or change its vacancies, assessments, interview sessions, and candidate data
-- Status : Open
+- Status : Fixed (a371fea)
 
 ### F-02: Login lets the client choose its own organization (cross-tenant access)
 
@@ -95,6 +102,19 @@ The `users` table has no link to an organization, so the API cannot know which o
 **Not verified:** 
 Comments in the code say tokens and organizations normally come from an external system that is not in this repo. This audit can only judge this repo, where the login endpoint is exposed and working as described.
 
+**Fix:** 
+Users now belong to one organization (`users.tenant_id`, new migration). Login signs the user's own organization into the token and returns `403` if the user has none. Removed: `resolve_scheme`, which took the organization from the `X-Tenant-Scheme` header and fell back to the first organization in the table.
+
+**Assumption (not in spec):** 
+a user belongs to exactly one organization. If users are meant to work across several organizations, this needs a membership table and an explicit organization choice that is checked against it.
+
+**Deploy note:** 
+existing users have no organization after the migration and get `403` at login until one is assigned.
+
+**Red → green:** 
+- Red: `fc47200` added the F-02 API tests; two of three failed (tokens issued for both organizations, header honoured). The positive control passed. <link to failed run>
+- Green: `a371fea` fixed login; the same unchanged tests passed. The only test-data change gives the test admin its organization (`ci_fixtures.rb`). <link to passing run>
+
 ## Leads to verify
 
 Observed while reading config. These are not confirmed findings yet.
@@ -106,13 +126,6 @@ Observed while reading config. These are not confirmed findings yet.
 - The README's frontend step points to `../ai-interview-web`; the folder is `web/`.
 
 - JWT signing depends on `SECRET_KEY_BASE` matching an external service, and organizations are expected to come from an external shared database. The platform's auth and tenancy depend on a system that is not in this repo.
-
-**Fix:** 
-`config/puma.rb` now creates the pidfile directory before Puma writes to it (`FileUtils.mkdir_p`). This works for every start path (Procfile, Docker, CI) and for a custom `PIDFILE`. The `.gitignore` conflict is left as is; startup no longer depends on it.
-
-**Red → green:** 
-- Red: `3e6454a` added the API boot check; it failed on the pidfile crash. <link to failed run>
-- Green: `e33f81d` fixed `puma.rb`; the same unchanged check passed. <link to passing run>
 
 ## Systemic pattern
 
