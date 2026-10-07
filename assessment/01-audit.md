@@ -122,7 +122,7 @@ existing users have no organization after the migration and get `403` at login u
 - Finding : An admin of one organization can read and change another organization's candidate portfolios by id
 - Type : Built wrong (sessions, assessments, and vacancies are filtered by organization; portfolios and portfolio skills are not)
 - Impact : One client's admin can export another client's candidate portfolio and overwrite that candidate's skill levels
-- Status : Open
+- Status : Fixed (2304f74)
 
 ### F-03: Portfolio reads and skill overrides ignore the organization
 
@@ -147,7 +147,14 @@ Setup: organizations `test-corp` and `other-corp`. User `other-admin@example.com
 `Portfolio` and `PortfolioSkill` are not organization-scoped. `PortfoliosController#set_portfolio` uses `Portfolio.find(params[:id])` for export, and `fitgap`, `show_fitgap`, and `regenerate_fitgap` do the same. `PortfolioSkillsController#set_portfolio_skill` uses `PortfolioSkill.joins(:portfolio).find(params[:id])`. None of these joins go through `Session`, which is the model that actually filters by organization.
 
 **Not verified:**
-`POST /api/v1/portfolios/:id/fitgap` and `POST /api/v1/portfolios/:id/regenerate_fitgap`. Both use the same unscoped `Portfolio.find`, so they are expected to queue work for another organization's portfolio. Not exercised, because they enqueue background jobs.
+`POST /api/v1/portfolios/:id/fitgap` and `POST /api/v1/portfolios/:id/regenerate_fitgap` now use the same organization-scoped lookup as export. The tests do not call them, because they enqueue background jobs.
+
+**Fix:**
+A request can load a portfolio only when its session belongs to the caller's organization (`Portfolio.find_for_current_tenant!`, and the same for `PortfolioSkill`). Any other id is a 404. Removed: `Portfolio.find(params[:id])` on export, fit/gap, and fit/gap regeneration, and `PortfolioSkill.joins(:portfolio).find(params[:id])` on skill override. The background fit/gap job still uses `Portfolio.find`, because it runs with no logged-in organization.
+
+**Red → green:**
+- Red: `bf71dc2` added the F-03 API tests. The owning organization could export (the positive control passed). The other organization also got 200 on export and on skill override. <link to failed run>
+- Green: `2304f74` scoped the lookups. The same unchanged tests passed. That commit also sets `AUTH_LOGIN_LIMIT` for the API tests workflow only, so the suite can log in once per test. The default login limit stays 5 per minute. <link to passing run>
 
 ## Leads to verify
 
