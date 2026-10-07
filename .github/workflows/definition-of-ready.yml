@@ -1,0 +1,32 @@
+# G2 — Definition of Ready
+#
+# What it protects:
+#   A pull request cannot proceed without its inputs: a spec/PRD,
+#   acceptance criteria or test scenarios, a short design plan, and
+#   a test (or N/A plus a reason). This is the workflow gate, not a
+#   product-code test.
+#
+# What it deliberately does NOT cover:
+#   Whether the spec is correct, whether the tests pass, or pushes
+#   to main. F-01 to F-04 stay on the API boot / API tests workflows.
+
+name: Definition of Ready
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  definition-of-ready:
+    name: PR has spec, criteria, plan, and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Check the PR body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 .github/scripts/check_definition_of_ready.py
