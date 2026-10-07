@@ -1,10 +1,21 @@
 # 01 — Platform Audit
 
-> **Status: working draft.** Findings are added as they are confirmed. Ranking, the systemic pattern, and the ship / do-not-ship line are written once the audit is complete.
+> **Status: complete for the paths we gated.** F-01–F-04 are fixed. `v1.0.0` is releasable for those paths. Remaining leads are named, not silent.
 
 ## Ship / do-not-ship
 
-_To be written at the end of the audit._
+**Ship `v1.0.0` for the gated paths. Do not claim the rest.**
+
+Ship means: login cannot pick another organization (F-02), a portfolio cannot be read or changed across organizations (F-03), an invalid AI skill level is not stored as a real score (F-04), and the API starts from a clean checkout (F-01). The **Release** workflow on tag `v1.0.0` was releasable: https://github.com/Nandi-exl/handle-quality-net/actions/runs/37594382378
+
+Do not ship if you need any of these to be true, because they are not gated:
+
+- A first-time web checkout talks to the API with no `.env` (client defaults to port 3000; API is 3001).
+- Live interview quality, audio, or real Gemini output.
+- Eager-load of the whole API in test (pre-existing `AudioWebSocketMiddleware` name mismatch). The live API still boots.
+
+If a new P0 or P1 is found and still open, the call becomes **do not ship** until it is fixed or explicitly accepted with a named owner. See `assessment/03-release-decision.md`.
+
 
 ## How to read this
 
