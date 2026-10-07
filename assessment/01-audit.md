@@ -16,6 +16,16 @@ Do not ship if you need any of these to be true, because they are not gated:
 
 If a new P0 or P1 is found and still open, the call becomes **do not ship** until it is fixed or explicitly accepted with a named owner. See `assessment/03-release-decision.md`.
 
+## Ranking
+
+Highest severity first. Stop at the first P0 if you only have time for one class of risk.
+
+1. **F-02** P0 — login lets the client choose the organization. Every later tenant check is only as trustworthy as the token.
+2. **F-03** P0 — the same hole on the data: portfolio export and skill override ignore the organization. F-02 closed the door at login; this was the door on the records.
+3. **F-04** P1 — an invalid AI level is stored as a real L1–L5 score. The product still generates a portfolio; the data underneath is wrong.
+4. **F-01** P2 — clean-checkout boot crash. Workaround exists; production image was already creating `tmp/pids`.
+
+Missing inputs (no PRD for tenancy or for “what is a score”) sit inside F-02 and F-04 as **Type**, not as separate IDs. G2 is the gate that makes that class hard to merge later.
 
 ## How to read this
 
@@ -229,9 +239,37 @@ Observed while reading config. These are not confirmed findings yet.
 
 ## Systemic pattern
 
-_To be written once enough findings are in._
+Organization and “is this a real assessed value?” were not enforced in one place, so the same class of hole showed up three times.
+
+- **Trust the client, then filter.** Vacancies and sessions are scoped. Login used to sign whatever `X-Tenant-Scheme` the client sent (F-02). Portfolios and skills were loaded by id and never joined the session (F-03). Tenant filtering on some tables is not a guarantee if the token or the lookup can skip it.
+- **A valid-looking number is treated as a score.** `to_i.clamp(1, 5)` turns garbage into L1 or L5 (F-04). The database check then accepts it. The screen would have shown a real badge.
+- **Setup that only works on one machine.** The pidfile directory was created in Docker and missing in a clean checkout (F-01). The web default port does not match the API. Nothing booted the API the way CI does, so those gaps stayed invisible.
+
+The net is built around those classes: boot the process, then refuse a cross-organization token or id, then refuse an invented level. A new endpoint that loads by raw id, or a new “just clamp it” line, is the same pattern again.
 
 ## Coverage of this audit
 
-_What was examined deeply, what was skimmed, and what was not examined. To be written at the end._
+**Examined in depth**
+
+- Login and how the organization gets into the token.
+- Vacancy list as a control for organization filtering.
+- Portfolio export, skill override, and the unscoped `Portfolio.find` / `PortfolioSkill.find` lookups.
+- `Portfolios::Generator` skill-level persistence, with Gemini stubbed.
+- Clean-checkout boot via Puma (`tmp/pids`).
+
+**Skimmed**
+
+- Web login and routing. Signup exists as a page and is not routed. Default API URL is port 3000.
+- Fit/gap generation and coverage `StateEngine` (the probe-count rule is applied in the analyzer).
+- Config and README mismatches (`ALLOWED_ORIGINS`, model env names, `web/` vs `ai-interview-web`).
+
+**Not examined**
+
+- Live interview UI, audio websocket, and real Gemini output.
+- Candidate invite flow in the browser.
+- Production k8s / ingress beyond a glance.
+- Whether every remaining table is organization-scoped. Only the paths above were proven.
+
+This audit is API-first. A seam bug that only appears after a full interview (transcript vs portfolio on screen) would not have been caught here.
+
 
