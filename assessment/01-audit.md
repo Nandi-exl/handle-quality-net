@@ -163,7 +163,7 @@ A request can load a portfolio only when its session belongs to the caller's org
 - Finding : An invalid or missing AI skill level is saved as a real L1–L5 score
 - Type : Built wrong (a fabricated score is stored as an assessed level)
 - Impact : A candidate who was not scored on a skill looks like a weak (or, if the value was too high, expert) candidate, and the fit/gap report treats that invented level as a real gap or exceed
-- Status : Open
+- Status : Fixed (0b1455a)
 
 ### F-04: Invalid skill levels are clamped into real scores
 
@@ -190,6 +190,18 @@ Only "Valid" is a real score. The other four were rewritten.
 **Not verified:**
 Whether the same clamp exists on assessor override input. The override endpoint already has a database check for 1–5, so an invalid override should fail rather than be rewritten; that path was not exercised.
 
+**Fix:**
+A level is stored only when it is an integer from 1 to 5 (`assessed_level`). Anything else is skipped and logged. Removed: `skill_data['level'].to_i.clamp(1, 5)` on both configured and discovered skills.
+
+**Assumption (not in spec):**
+reject the bad skill; do not fail the whole portfolio. A valid skill in the same response is still saved. Fit/gap then treats the missing skill as not assessed.
+
+**Red → green:**
+- Local red: `7925e88` added the F-04 examples. Two of three failed (invented L1 and L5). The valid-L3 example passed.
+- Product fix: `0b1455a` removed the clamp. The same unchanged examples passed locally.
+- CI note: the **API tests** runs on `7925e88` and `0b1455a` were also red, but for a different reason. GitHub sets `CI=true`, which eager-loaded the app and raised `uninitialized constant AudioWebsocketMiddleware` before any example ran. That name error was already in the original import (class `AudioWebSocketMiddleware` vs file `audio_websocket_middleware.rb`). `4ee3150` turns eager load off in test so the examples can run. The F-04 assertions were not changed.
+- Green: `4ee3150` plus the product fix. <link to passing run>
+
 ## Leads to verify
 
 Observed while reading config. These are not confirmed findings yet.
@@ -201,6 +213,8 @@ Observed while reading config. These are not confirmed findings yet.
 - The README's frontend step points to `../ai-interview-web`; the folder is `web/`.
 
 - JWT signing depends on `SECRET_KEY_BASE` matching an external service, and organizations are expected to come from an external shared database. The platform's auth and tenancy depend on a system that is not in this repo.
+
+- Eager load fails on `AudioWebSocketMiddleware` (file `audio_websocket_middleware.rb`). The live API still boots because an initializer `require_relative`s the file. Test eager load stays off until this is fixed.
 
 ## Systemic pattern
 
