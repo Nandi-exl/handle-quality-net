@@ -9,6 +9,12 @@ export const ADMIN = {
   password: process.env.TEST_ADMIN_PASSWORD ?? "password123",
 };
 
+// Admin of the second organization. Used to attempt cross-organization access.
+export const OTHER_ADMIN = {
+  email: process.env.TEST_OTHER_ADMIN_EMAIL ?? "other-admin@example.com",
+  password: process.env.TEST_OTHER_ADMIN_PASSWORD ?? "password123",
+};
+
 // Two organizations, so cross-tenant behaviour can be tested.
 export const ORG_A = "test-corp";
 export const ORG_B = "other-corp";
@@ -20,18 +26,25 @@ export interface LoginResult {
 
 // POST /api/v1/auth/login, optionally asking for an organization via the
 // X-Tenant-Scheme header (the header the web app's login does not need to send).
-export async function login(scheme?: string): Promise<LoginResult> {
+export async function loginAs(
+  user: { email: string; password: string },
+  scheme?: string,
+): Promise<LoginResult> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (scheme) headers["X-Tenant-Scheme"] = scheme;
 
   const res = await fetch(`${API_URL}/api/v1/auth/login`, {
     method: "POST",
     headers,
-    body: JSON.stringify(ADMIN),
+    body: JSON.stringify(user),
   });
   const body = await res.json().catch(() => null);
 
   return { status: res.status, token: body?.token };
+}
+
+export async function login(scheme?: string): Promise<LoginResult> {
+  return loginAs(ADMIN, scheme);
 }
 
 // Reads the organization ("scheme" claim) out of a JWT without verifying it.
