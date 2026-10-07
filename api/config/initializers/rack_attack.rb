@@ -6,8 +6,11 @@ class Rack::Attack
     url: ENV.fetch('REDIS_URL', 'redis://localhost:6379/1')
   )
 
-  # Throttle login attempts: 5 per minute per IP.
-  throttle('auth/login', limit: 5, period: 1.minute) do |req|
+  # Throttle login attempts per IP.
+  # The default stays 5 per minute. The black-box suite logs in once per test
+  # from a single IP, so the API tests workflow sets AUTH_LOGIN_LIMIT higher.
+  # Unset, this stays 5. It does not change the F-02 or F-03 assertions.
+  throttle('auth/login', limit: ENV.fetch('AUTH_LOGIN_LIMIT', 5).to_i, period: 1.minute) do |req|
     req.ip if req.path == '/api/v1/auth/login' && req.post?
   end
 
