@@ -115,6 +115,40 @@ existing users have no organization after the migration and get `403` at login u
 - Red: `fc47200` added the F-02 API tests; two of three failed (tokens issued for both organizations, header honoured). The positive control passed. <link to failed run>
 - Green: `a371fea` fixed login; the same unchanged tests passed. The only test-data change gives the test admin its organization (`ci_fixtures.rb`). <link to passing run>
 
+---
+
+- ID : F-03
+- Sev : P0
+- Finding : An admin of one organization can read and change another organization's candidate portfolios by id
+- Type : Built wrong (sessions, assessments, and vacancies are filtered by organization; portfolios and portfolio skills are not)
+- Impact : One client's admin can export another client's candidate portfolio and overwrite that candidate's skill levels
+- Status : Open
+
+### F-03: Portfolio reads and skill overrides ignore the organization
+
+**Severity:**
+P0. F-02 closed the door at login, and this is the same door on the data itself. A caller who already belongs to one organization can still read and change another organization's candidate assessment. Even read as a data-integrity issue it is at least P1, because the override is saved and then deletes and regenerates that portfolio's fit/gap reports.
+
+**Type:**
+Built wrong. Organization filtering exists and works for sessions, assessments, and vacancies. Portfolios belong to a session, but the portfolio endpoints look the portfolio and its skills up by id alone.
+
+**Impact:**
+An admin token for organization B can export organization A's candidate portfolio (skills, evidence quotes, competency summaries) and can set that candidate's skill levels. The override is stored and triggers regeneration of A's fit/gap reports.
+
+**Evidence / repro:**
+Setup: organizations `test-corp` and `other-corp`. User `other-admin@example.com` belongs to `other-corp`. A completed portfolio (id 1) with one skill (id 1, label "Ruby", ai_level 3) belongs to a session (id 1) whose assessment belongs to `test-corp`. All calls use the `other-corp` token.
+1. `GET /api/v1/sessions/1/portfolio` → `404` "Session not found". Session lookup is filtered by organization. This is the control.
+2. `GET /api/v1/portfolios/1/export` → `200`, body contains portfolio 1, session 1, skill "Ruby". Cross-organization read.
+3. `POST /api/v1/portfolio_skills/1/override` with `{"override":{"override_level":5}}` → `201` Created.
+4. The skill's assessor override is stored with `override_level` 5.
+5. `GET /api/v1/portfolios/1/fitgap/1` → `404` "Fit/gap report not found", not "Portfolio not found". The portfolio itself was found; only the report is missing.
+
+**Root cause:**
+`Portfolio` and `PortfolioSkill` are not organization-scoped. `PortfoliosController#set_portfolio` uses `Portfolio.find(params[:id])` for export, and `fitgap`, `show_fitgap`, and `regenerate_fitgap` do the same. `PortfolioSkillsController#set_portfolio_skill` uses `PortfolioSkill.joins(:portfolio).find(params[:id])`. None of these joins go through `Session`, which is the model that actually filters by organization.
+
+**Not verified:**
+`POST /api/v1/portfolios/:id/fitgap` and `POST /api/v1/portfolios/:id/regenerate_fitgap`. Both use the same unscoped `Portfolio.find`, so they are expected to queue work for another organization's portfolio. Not exercised, because they enqueue background jobs.
+
 ## Leads to verify
 
 Observed while reading config. These are not confirmed findings yet.
