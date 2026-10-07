@@ -156,6 +156,40 @@ A request can load a portfolio only when its session belongs to the caller's org
 - Red: `bf71dc2` added the F-03 API tests. The owning organization could export (the positive control passed). The other organization also got 200 on export and on skill override. <link to failed run>
 - Green: `2304f74` scoped the lookups. The same unchanged tests passed. That commit also sets `AUTH_LOGIN_LIMIT` for the API tests workflow only, so the suite can log in once per test. The default login limit stays 5 per minute. <link to passing run>
 
+---
+
+- ID : F-04
+- Sev : P1
+- Finding : An invalid or missing AI skill level is saved as a real L1–L5 score
+- Type : Built wrong (a fabricated score is stored as an assessed level)
+- Impact : A candidate who was not scored on a skill looks like a weak (or, if the value was too high, expert) candidate, and the fit/gap report treats that invented level as a real gap or exceed
+- Status : Open
+
+### F-04: Invalid skill levels are clamped into real scores
+
+**Severity:**
+P1. The product still produces a portfolio, so the objective is reached. The data underneath is wrong: a missing or out-of-range model output is stored as a valid L1–L5 score. Any data-integrity issue is at least P1.
+
+**Type:**
+Built wrong. A skill level is an assessed score. A missing or invalid level is not a score, and it must not be written as one. The spec does not say what to do instead; it also does not say to invent L1 or L5.
+
+**Impact:**
+A recruiter reading the portfolio, or a fit/gap report comparing the candidate to a vacancy, treats the invented number as a real assessment. `nil` and `"N/A"` become L1, so an unassessed skill looks like a weak candidate. `9` becomes L5, so a bad model output looks like an expert.
+
+**Evidence / repro:**
+A completed session, with Gemini replaced by a fixed response, so no API key is needed.
+1. `Portfolios::Generator` is called with configured skills whose `level` values are `nil`, `"N/A"`, `0`, `9`, and `3`.
+2. `portfolio.portfolio_skills.pluck(:skill_label, :ai_level)` returns:
+`[["Missing level", 1], ["Not assessed", 1], ["Zero", 1], ["Too high", 5], ["Valid", 3]]`
+
+Only "Valid" is a real score. The other four were rewritten.
+
+**Root cause:**
+`Portfolios::Generator#save_skills` writes `skill_data['level'].to_i.clamp(1, 5)`. In Ruby, `nil.to_i` and `"N/A".to_i` are `0`, and `0.clamp(1, 5)` is `1`. `9.clamp(1, 5)` is `5`. The database check (`ai_level` between 1 and 5) then accepts the invented value. Nothing is logged.
+
+**Not verified:**
+Whether the same clamp exists on assessor override input. The override endpoint already has a database check for 1–5, so an invalid override should fail rather than be rewritten; that path was not exercised.
+
 ## Leads to verify
 
 Observed while reading config. These are not confirmed findings yet.
