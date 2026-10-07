@@ -1,0 +1,110 @@
+# API tests (black-box)
+#
+# What it protects:
+#   Behaviour of the running API as a client sees it: auth, tenant isolation,
+#   and data integrity across the API/web seam. Each test is tied to a finding
+#   ID in assessment/01-audit.md.
+#
+# What it deliberately does NOT cover:
+#   UI rendering, live interview audio, and real Gemini output quality.
+#   Gemini runs without an API key here.
+
+name: API tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api-tests:
+    name: Black-box API tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: api
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Dummy, non-secret values: just enough for the app to run.
+    env:
+      RAILS_ENV: development
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      REDIS_URL: redis://localhost:6379/1
+      SECRET_KEY_BASE: ci-dummy-secret-key-base-not-for-production
+      ALLOWED_ORIGINS: http://localhost:5173
+      APP_BASE_URL: http://localhost:3001
+      WEB_CONCURRENCY: "0"
+      RAILS_MAX_THREADS: "5"
+      API_URL: http://localhost:3001
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby and gems
+        uses: ruby/setup-ruby@v1
+        with:
+          working-directory: api
+          bundler-cache: true
+
+      - name: Create, migrate, and seed a blank database
+        run: bundle exec rails db:create db:migrate db:seed
+
+      - name: Load test fixtures
+        run: bundle exec rails runner db/ci_fixtures.rb
+
+      # The server keeps running in the background for the test steps below.
+      - name: Start API
+        run: |
+          bundle exec puma -C config/puma.rb > "$RUNNER_TEMP/puma.log" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3001/health > /dev/null && echo "API is up" && exit 0
+            sleep 1
+          done
+          echo "::error::API did not start. See 'Show API log' below."
+          exit 1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # web/ has no package-lock.json yet, so dependencies are not pinned.
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+
+      - name: Run API tests
+        working-directory: web
+        run: npm run test:api
+
+      - name: Show API log
+        if: failure()
+        run: cat "$RUNNER_TEMP/puma.log" || echo "no log written"
