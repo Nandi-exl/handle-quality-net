@@ -82,6 +82,15 @@ jobs:
       - name: Load test fixtures
         run: bundle exec rails runner db/ci_fixtures.rb
 
+      # F-04 and later unit tests run against the test database, not the
+      # running API. RAILS_ENV is development for the rest of this job.
+      - name: Run unit tests
+        env:
+          RAILS_ENV: test
+        run: |
+          bundle exec rails db:create db:migrate
+          bundle exec rspec
+
       # The server keeps running in the background for the test steps below.
       - name: Start API
         run: |
