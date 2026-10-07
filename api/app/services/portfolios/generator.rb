@@ -154,28 +154,38 @@ module Portfolios
       portfolio.portfolio_skills.destroy_all
 
       (data['configured_skills'] || []).each do |skill_data|
-        portfolio.portfolio_skills.create!(
-          skill_id:           skill_data['skill_id'],
-          skill_label:        skill_data['skill_label'],
-          is_discovered:      false,
-          ai_level:           skill_data['level'].to_i.clamp(1, 5),
-          ai_confidence:      skill_data['confidence'],
-          evidence:           Array(skill_data['evidence']).first(3),
-          competency_summary: skill_data['competency_summary']
-        )
+        persist_skill(portfolio, skill_data, discovered: false)
       end
 
       (data['discovered_skills'] || []).each do |skill_data|
-        portfolio.portfolio_skills.create!(
-          skill_id:           nil,
-          skill_label:        skill_data['skill_label'],
-          is_discovered:      true,
-          ai_level:           skill_data['level'].to_i.clamp(1, 5),
-          ai_confidence:      skill_data['confidence'],
-          evidence:           Array(skill_data['evidence']).first(3),
-          competency_summary: skill_data['competency_summary']
-        )
+        persist_skill(portfolio, skill_data, discovered: true)
       end
+    end
+
+    def persist_skill(portfolio, skill_data, discovered:)
+      level = assessed_level(skill_data['level'])
+      unless level
+        Rails.logger.warn("[N10] Skipping skill #{skill_data['skill_label'].inspect}: level #{skill_data['level'].inspect} is not a 1–5 score")
+        return
+      end
+
+      portfolio.portfolio_skills.create!(
+        skill_id:           discovered ? nil : skill_data['skill_id'],
+        skill_label:        skill_data['skill_label'],
+        is_discovered:      discovered,
+        ai_level:           level,
+        ai_confidence:      skill_data['confidence'],
+        evidence:           Array(skill_data['evidence']).first(3),
+        competency_summary: skill_data['competency_summary']
+      )
+    end
+
+    # A missing or unreadable value is not a score. Do not coerce it into 1–5.
+    def assessed_level(value)
+      level = Integer(value, exception: false)
+      return level if (1..5).include?(level)
+
+      nil
     end
   end
 end
