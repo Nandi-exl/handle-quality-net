@@ -90,8 +90,19 @@ On GitHub, open two PRs and leave them visible: one with a blank body (blocked),
 - F-02 and F-03 are wrong HTTP answers, so the check is a TypeScript client against the running API, the same way the web app talks to it.
 - F-04 happens inside a background job after Gemini returns. There is no endpoint that accepts fake skill levels, so the check calls `Portfolios::Generator` with a stub client.
 
+## G3 — how the release gate works
+
+On a version tag (`v*`), workflow **Release** runs API boot and API tests, then prints **releasable** or **blocked**.
+
+1. Commit the notes and the workflow to `main`.
+2. Tag `v1.0.0` on that commit and push the tag.
+3. Open the **Release** run. The last job is the status.
+4. Copy that result into `assessment/03-release-decision.md`.
+
+G2 demo PRs stay open: one blocked, one passing. They are not part of the tag gate.
+
 ## Not built yet
 
-- G2 demo PRs: one the gate blocks, one it passes.
-- G3 release gate: a tag, `RELEASE_NOTES.md`, and a CI job on the tag that says releasable or blocked.
+- Paste the `v1.0.0` Release run URL into `03-release-decision.md` after the tag job finishes.
+
 

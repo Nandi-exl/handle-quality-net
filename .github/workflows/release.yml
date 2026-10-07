@@ -1,0 +1,191 @@
+# G3 — Release gate
+#
+# What it protects:
+#   A version tag is releasable only when the same net that runs on main
+#   is green: API boot (F-01) and API tests (F-02, F-03, F-04).
+#   The last job prints one line: releasable or blocked.
+#
+# What it deliberately does NOT cover:
+#   G2 (that is a pull-request check). Live Gemini, audio, or the web UI.
+#   Whether remaining leads (web port, websocket name) are acceptable.
+#   That call is in assessment/03-release-decision.md.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  boot:
+    name: API boot
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      RAILS_ENV: development
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      REDIS_URL: redis://localhost:6379/1
+      SECRET_KEY_BASE: ci-dummy-secret-key-base-not-for-production
+      ALLOWED_ORIGINS: http://localhost:5173
+      APP_BASE_URL: http://localhost:3001
+      WEB_CONCURRENCY: "0"
+      RAILS_MAX_THREADS: "5"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: api
+          bundler-cache: true
+      - run: bundle exec rails db:create db:migrate db:seed
+      - name: Start API and check /health
+        run: |
+          bundle exec puma -C config/puma.rb > "$RUNNER_TEMP/puma.log" 2>&1 &
+          PUMA_PID=$!
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3001/health; then
+              echo
+              echo "API is up"
+              kill "$PUMA_PID"
+              exit 0
+            fi
+            if ! kill -0 "$PUMA_PID" 2>/dev/null; then
+              echo "::error::API process exited during boot."
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "::error::API did not respond on /health within 30 seconds."
+          exit 1
+      - name: Show API log
+        if: failure()
+        run: cat "$RUNNER_TEMP/puma.log" || echo "no log written"
+
+  tests:
+    name: API tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      RAILS_ENV: development
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      REDIS_URL: redis://localhost:6379/1
+      SECRET_KEY_BASE: ci-dummy-secret-key-base-not-for-production
+      ALLOWED_ORIGINS: http://localhost:5173
+      APP_BASE_URL: http://localhost:3001
+      WEB_CONCURRENCY: "0"
+      RAILS_MAX_THREADS: "5"
+      API_URL: http://localhost:3001
+      AUTH_LOGIN_LIMIT: "100"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: api
+          bundler-cache: true
+      - run: bundle exec rails db:create db:migrate db:seed
+      - run: bundle exec rails runner db/ci_fixtures.rb
+      - name: Run unit tests
+        env:
+          RAILS_ENV: test
+        run: |
+          bundle exec rails db:create db:migrate
+          bundle exec rspec
+      - name: Start API
+        run: |
+          bundle exec puma -C config/puma.rb > "$RUNNER_TEMP/puma.log" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3001/health > /dev/null && echo "API is up" && exit 0
+            sleep 1
+          done
+          echo "::error::API did not start."
+          exit 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+      - name: Run API tests
+        working-directory: web
+        run: npm run test:api
+      - name: Show API log
+        if: failure()
+        run: cat "$RUNNER_TEMP/puma.log" || echo "no log written"
+
+  status:
+    name: Release status
+    runs-on: ubuntu-latest
+    needs: [boot, tests]
+    if: always()
+    steps:
+      - name: Print releasable or blocked
+        run: |
+          echo "Tag: ${{ github.ref_name }}"
+          echo "API boot: ${{ needs.boot.result }}"
+          echo "API tests: ${{ needs.tests.result }}"
+          if [ "${{ needs.boot.result }}" = "success" ] && [ "${{ needs.tests.result }}" = "success" ]; then
+            echo "RELEASE STATUS: releasable"
+            echo "### This version is releasable" >> "$GITHUB_STEP_SUMMARY"
+            echo "Tag \`${{ github.ref_name }}\`: API boot and API tests passed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "RELEASE STATUS: blocked"
+            echo "### This version is blocked" >> "$GITHUB_STEP_SUMMARY"
+            echo "Tag \`${{ github.ref_name }}\`: boot=${{ needs.boot.result }}, tests=${{ needs.tests.result }}." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
